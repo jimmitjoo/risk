@@ -1,0 +1,110 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Transform: AWS::Serverless-2016-10-31
+
+Globals:
+  Function:
+    Timeout: 15
+    Environment:
+      Variables:
+        CONFIG_REGION: !Ref AWS::Region
+  Api:
+    Cors:
+      AllowOrigin: "'*'"
+      AllowHeaders: "'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token'"
+      AllowMethods: "'OPTIONS,GET,POST'"
+
+Resources:
+  ServiceRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: 2012-10-17
+        Statement:
+        -
+          Action: sts:AssumeRole
+          Effect: Allow
+          Principal:
+            Service:
+              - edgelambda.amazonaws.com
+              - lambda.amazonaws.com
+      RoleName: !Ref AWS::StackName
+
+  ServicePolicy:
+    Type: AWS::IAM::Policy
+    Properties:
+      PolicyName: !Ref AWS::StackName
+      PolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          - Effect: Allow
+            Action:
+              - logs:CreateLogGroup
+              - logs:CreateLogStream
+              - logs:PutLogEvents
+            Resource: arn:aws:logs:*:*:*
+          - Effect: Allow
+            Action:
+              - lambda:InvokeFunction
+            Resource: "*"
+          - Effect: Allow
+            Action:
+              - s3:PutObject
+              - s3:GetObject
+              - s3:ListObjects
+              - s3:GetLifecycleConfiguration
+              - s3:PutLifecycleConfiguration
+            Resource: !Join
+              - ''
+              - - 'arn:aws:s3:::'
+                - !Ref WebsiteBucket
+                - /*
+          - Effect: Allow
+            Action:
+              - xray:PutTraceSegments
+            Resource: "*"
+          - Effect: Allow
+            Action:
+              - lambda:InvokeFunction
+            Resource: "*"
+          - Effect: Allow
+            Action:
+              - ec2:DescribeNetworkInterfaces
+              - ec2:CreateNetworkInterface
+              - ec2:DeleteNetworkInterface
+              - ec2:DescribeInstances
+              - ec2:AttachNetworkInterface
+            Resource: "*"
+      Roles:
+        - Ref: ServiceRole
+    DependsOn:
+      - ServiceRole
+
+  # S3 bucket for static website hosting
+  WebsiteBucket:
+    Type: 'AWS::S3::Bucket'
+    Properties:
+      BucketName: !Join [ "-", [ !Ref 'AWS::StackName', "website-bucket" ] ] # replace this with your own bucket name
+      PublicAccessBlockConfiguration:
+        BlockPublicPolicy: false
+        RestrictPublicBuckets: false
+      WebsiteConfiguration:
+        IndexDocument: index.html
+        ErrorDocument: error.html
+
+  # Lambda function for dynamic backend
+  HelloWorldLambdaFunction:
+    Type: 'AWS::Serverless::Function'
+    Properties:
+      FunctionName: !Join [ "-", [ !Ref 'AWS::StackName', "HelloWorldLambdaFunction" ] ]
+      Role: !GetAtt ServiceRole.Arn
+      CodeUri: bin
+      Handler: router
+      Runtime: go1.x
+      Events:
+        List:
+          Type: Api
+          Properties:
+            Path: /api
+            Method: GET
+    DependsOn:
+      - ServicePolicy

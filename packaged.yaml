@@ -1,0 +1,125 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Transform: AWS::Serverless-2016-10-31
+Globals:
+  Function:
+    Timeout: 15
+    Environment:
+      Variables:
+        CONFIG_REGION:
+          Ref: AWS::Region
+  Api:
+    Cors:
+      AllowOrigin: '''*'''
+      AllowHeaders: '''Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token'''
+      AllowMethods: '''OPTIONS,GET,POST'''
+Resources:
+  ServiceRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+        - Action: sts:AssumeRole
+          Effect: Allow
+          Principal:
+            Service:
+            - edgelambda.amazonaws.com
+            - lambda.amazonaws.com
+      RoleName:
+        Ref: AWS::StackName
+    Metadata:
+      SamResourceId: ServiceRole
+  ServicePolicy:
+    Type: AWS::IAM::Policy
+    Properties:
+      PolicyName:
+        Ref: AWS::StackName
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+        - Effect: Allow
+          Action:
+          - logs:CreateLogGroup
+          - logs:CreateLogStream
+          - logs:PutLogEvents
+          Resource: arn:aws:logs:*:*:*
+        - Effect: Allow
+          Action:
+          - lambda:InvokeFunction
+          Resource: '*'
+        - Effect: Allow
+          Action:
+          - s3:PutObject
+          - s3:GetObject
+          - s3:ListObjects
+          - s3:GetLifecycleConfiguration
+          - s3:PutLifecycleConfiguration
+          Resource:
+            Fn::Join:
+            - ''
+            - - 'arn:aws:s3:::'
+              - Ref: WebsiteBucket
+              - /*
+        - Effect: Allow
+          Action:
+          - xray:PutTraceSegments
+          Resource: '*'
+        - Effect: Allow
+          Action:
+          - lambda:InvokeFunction
+          Resource: '*'
+        - Effect: Allow
+          Action:
+          - ec2:DescribeNetworkInterfaces
+          - ec2:CreateNetworkInterface
+          - ec2:DeleteNetworkInterface
+          - ec2:DescribeInstances
+          - ec2:AttachNetworkInterface
+          Resource: '*'
+      Roles:
+      - Ref: ServiceRole
+    DependsOn:
+    - ServiceRole
+    Metadata:
+      SamResourceId: ServicePolicy
+  WebsiteBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName:
+        Fn::Join:
+        - '-'
+        - - Ref: AWS::StackName
+          - website-bucket
+      PublicAccessBlockConfiguration:
+        BlockPublicPolicy: false
+        RestrictPublicBuckets: false
+      WebsiteConfiguration:
+        IndexDocument: index.html
+        ErrorDocument: error.html
+    Metadata:
+      SamResourceId: WebsiteBucket
+  HelloWorldLambdaFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName:
+        Fn::Join:
+        - '-'
+        - - Ref: AWS::StackName
+          - HelloWorldLambdaFunction
+      Role:
+        Fn::GetAtt:
+        - ServiceRole
+        - Arn
+      CodeUri: s3://risk-binar-bucket/eae8c13b12267334875f7aabddaef307
+      Handler: router
+      Runtime: go1.x
+      Events:
+        List:
+          Type: Api
+          Properties:
+            Path: /api
+            Method: GET
+    DependsOn:
+    - ServicePolicy
+    Metadata:
+      SamResourceId: HelloWorldLambdaFunction
